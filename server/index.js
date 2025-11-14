@@ -114,7 +114,7 @@ app.get('/api/posts', async (req, res) => {
     }
     sql += ` ORDER BY p.created_at DESC LIMIT 100`;
     const [rows] = await pool.query(sql, params);
-    return res.json({ value: rows, Count: rows.length });
+    return res.json(rows); // 修正: APIレスポンスを配列に統一（配列: [{...}, {...}, ...]）
   } catch (err) {
     console.error('search posts error:', err);
     return res.status(500).json({ error: 'internal error' });
