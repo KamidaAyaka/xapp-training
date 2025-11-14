@@ -7,6 +7,7 @@ const PORT = 3001;
 
 app.use(cors());
 app.use(express.json());
+app.use((req, res, next) => { console.log(new Date().toISOString(), 'REQ', req.ip, req.method, req.url); next(); });
 
 /* ========================================
    認証API：POST /api/login
@@ -52,25 +53,6 @@ app.get("/health", (req, res) => res.json({ ok: true }));
    投稿API（DB連携版）
    ======================================== */
 
-// 一覧取得
-app.get("/api/posts", async (req, res) => {
-  try {
-    const [rows] = await pool.query(
-      `SELECT p.id, p.user_id, u.user_id AS user_handle, p.content,
-              p.post_type, p.parent_post_id, p.reply_to_user_id,
-              p.likes_count, p.repost_count, p.reply_count, p.created_at
-       FROM posts p
-       LEFT JOIN users u ON p.user_id = u.id
-       WHERE p.is_deleted = 0
-       ORDER BY p.created_at DESC
-       LIMIT 100`
-    );
-    return res.json(rows);
-  } catch (err) {
-    console.error("GET /api/posts error:", err);
-    return res.status(500).json({ error: "internal error" });
-  }
-});
 
 // 投稿作成
 app.post("/api/posts", async (req, res) => {
@@ -104,6 +86,39 @@ app.post("/api/posts", async (req, res) => {
 /* ========================================
    サーバ起動
    ======================================== */
-app.listen(PORT, () =>
-  console.log(`✅ Server running on http://localhost:${PORT}`)
-);
+   if (require.main === module) {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
+    });
+  }
+module.exports = app; // テストから supertest で require するための export
+
+/* ============================
+   一覧取得・検索API：GET /api/posts?search=<keyword>
+   - content と user_handle を部分一致で検索
+   - 検索ワードがない場合は全件（is_deleted=0）を返す
+   ============================ */
+app.get('/api/posts', async (req, res) => {
+  try {
+    const q = (req.query.search || '').trim();
+    let sql = `SELECT p.id, p.user_id, u.user_id AS user_handle, p.content, p.post_type, p.parent_post_id,
+                      p.reply_to_user_id, p.likes_count, p.repost_count, p.reply_count, p.created_at
+               FROM posts p
+               LEFT JOIN users u ON p.user_id = u.id
+               WHERE p.is_deleted = 0`;
+    const params = [];
+    if (q) {
+      sql += ` AND (p.content LIKE ? OR u.user_id LIKE ?)`;
+      const like = '%' + q + '%';
+      params.push(like, like);
+    }
+    sql += ` ORDER BY p.created_at DESC LIMIT 100`;
+    const [rows] = await pool.query(sql, params);
+    return res.json({ value: rows, Count: rows.length });
+  } catch (err) {
+    console.error('search posts error:', err);
+    return res.status(500).json({ error: 'internal error' });
+  }
+});
+
+
